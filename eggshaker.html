@@ -1,0 +1,200 @@
+
+<html>
+
+<head> 
+
+<title>Turn your phone into an egg shaker!</title>
+
+</head>
+
+
+
+<body>
+
+<div id="content">
+
+    <h1>Egg Shaker</h1>
+
+    <p id="startgraph">
+      Click anywhere to start.
+    </p>
+    <p id="stopgraph" style="display:none">
+      Click anywhere to stop.
+    </p>
+
+    <!-- TODO: add an image of an easter egg ? -->
+
+</div>
+
+<script>
+
+var audioContext;
+var noiseSource;
+
+var volume = 0.0; // for decay
+var masterGain;
+
+var decayIntervalID = 0; // set by addDecayInterval, cleared by decayCallback
+
+function setVolumeInternal(volume) {
+    if (masterGain) {
+        masterGain.gain.value = volume;
+    }
+}
+  
+function decayCallback() {
+    // decay
+    if (volume > 0) {
+        volume = volume * 0.9;
+    }
+    if (volume < 0.1) {
+        volume = 0.0;
+        clearInterval(decayIntervalID);
+        decayIntervalID = 0; // 
+    }
+    setVolumeInternal(volume);
+};
+
+function addDecayInterval() {
+    clearInterval(decayIntervalID);
+    decayIntervalID = setInterval(decayCallback);
+}
+
+function setVolume(volume) {
+    setVolumeInternal(volume);
+    if (decayIntervalID == 0) {
+        addDecayInterval();
+    }
+}
+  
+function startHandler() {
+    // change visibilities
+    document.getElementById('startgraph').style.display = 'none';
+    document.getElementById('stopgraph').style.display = '';
+    
+    // Start the noise
+    if (!audioContext) {
+        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    
+    // Check if context is suspended (due to browser autoplay policies)
+    if (audioContext.state === 'suspended') {
+        audioContext.resume();
+    }
+    
+    const bufferSize = audioContext.sampleRate * 2; // 2 seconds of noise
+    const noiseBuffer = audioContext.createBuffer(1, bufferSize, audioContext.sampleRate);
+    const output = noiseBuffer.getChannelData(0);
+    
+    for (let i = 0; i < bufferSize; i++) {
+        var sample = Math.random() * 2 - 1; // Random values between -1.0 and 1.0
+        output[i] = sample;
+    }
+    
+    masterGain = audioContext.createGain();
+    masterGain.gain.value = 0; // initial volume
+    masterGain.connect(audioContext.destination);
+    
+    noiseSource = audioContext.createBufferSource();
+    noiseSource.buffer = noiseBuffer;
+    noiseSource.loop = true; // Loop the 2-second buffer
+    
+    // Create a BiquadFilterNode
+    const bandpassFilter = audioContext.createBiquadFilter();
+    bandpassFilter.type = 'bandpass';
+    const from = 6000;  // Lower cutoff in Hz
+    const to = 10000;   // Upper cutoff in Hz
+    const centerFrequency = Math.sqrt(from * to); 
+    const qValue = centerFrequency / (to - from); // Quality factor (bandwidth width)
+    bandpassFilter.frequency.setValueAtTime(9000, audioContext.currentTime); // Center frequency in Hz
+    bandpassFilter.Q.setValueAtTime(qValue, audioContext.currentTime);
+    
+    noiseSource.connect(bandpassFilter);
+    bandpassFilter.connect(masterGain);
+    noiseSource.start();
+}
+
+function stopHandler() {
+    // change visibilities
+    document.getElementById('startgraph').style.display = '';
+    document.getElementById('stopgraph').style.display = 'none';
+
+    if (noiseSource) {
+        // Stop the noise if it's already playing
+        noiseSource.stop();
+        noiseSource = null;
+        setVolumeInternal(0);
+    }
+}
+
+function toggleHandler() {
+    if (noiseSource) {
+        stopHandler();
+    } else {
+        startHandler();
+    }
+}
+
+function keydownHandler(event) {
+    if (event.repeat || event.ctrlKey) {
+        // Ignore control key events and autorepeats!
+    } else {
+        toggleHandler();
+    }
+}
+  
+document.addEventListener('click', toggleHandler);
+document.addEventListener('keydown', keydownHandler);
+
+if (window.DeviceMotionEvent != undefined) {
+    window.ondevicemotion = function(e) {
+        if (noiseSource == null) {
+            return;
+        }
+        if (e.accelerationIncludingGravity && e.accelerationIncludingGravity.x) {
+            var ax = e.accelerationIncludingGravity.x;
+            var ay = e.accelerationIncludingGravity.y;
+            var az = e.accelerationIncludingGravity.z;
+            var a = Math.sqrt(ax*ax + ay*ay + az*az);
+
+            if (a > 10.0) {
+                var volume = (a-10) / 100;
+                setVolume(volume);
+            }
+        }
+    }
+}
+
+var prevX = 0;
+var prevY = 0;
+
+// the mouse move (scratch) handler
+document.addEventListener('mousemove', function(e) {
+    // Track prevX, prevY unconditionally
+    if (prevX == 0) {
+        prevX = e.clientX;
+        prevY = e.clientY;
+        return;
+    }
+    if (noiseSource == null) {
+        return;
+    }
+    
+    volume = Math.sqrt( (e.clientX - prevX)*(e.clientX - prevX) + (e.clientY - prevY)*(e.clientY - prevY) ) / 10;
+
+    if (volume < 0.1) {
+        volume = 0.0;
+    }
+
+    prevX = e.clientX;
+    prevY = e.clientY;
+    
+    setVolume(volume);
+});
+
+                            
+</script>
+
+</body>
+</html>
+
